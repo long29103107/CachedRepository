@@ -41,7 +41,6 @@ public class CachedBaseRepository<T>(
     public async Task<T> AddAsync(T entity, CancellationToken cancellationToken = default)
     {
         var result = await _inner.AddAsync(entity, cancellationToken);
-        InvalidateAll();
         _cache.Set(CacheKey(result.Id), result, TimeSpan.FromMinutes(_duration));
         return result;
     }
@@ -49,22 +48,14 @@ public class CachedBaseRepository<T>(
     public async Task UpdateAsync(T entity, CancellationToken cancellationToken = default)
     {
         await _inner.UpdateAsync(entity, cancellationToken);
-        InvalidateAll();
         _cache.Set(CacheKey(entity.Id), entity, TimeSpan.FromMinutes(_duration));
     }
 
     public async Task RemoveAsync(T entity, CancellationToken cancellationToken = default)
     {
         await _inner.RemoveAsync(entity, cancellationToken);
-        InvalidateAll();
         _cache.Remove(CacheKey(entity.Id));
     }
 
     private string CacheKey(int id) => $"{_keyPrefix}:{id}";
-    private string AllKey => $"{_keyPrefix}:all";
-
-    private void InvalidateAll()
-    {
-        _cache.Remove(AllKey);
-    }
 }

@@ -1,7 +1,9 @@
 using System.Reflection;
 using CachedRepository.Attributes;
+using CachedRepository.Configuration;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Configuration;
 using CachedRepository.Data;
 using CachedRepository.Repositories.Base;
 using CachedRepository.Repositories.Cache;
@@ -11,7 +13,7 @@ namespace CachedRepository;
 
 public static class DependencyInjection
 {
-    public static void AddApplicationServices(this IServiceCollection services)
+    public static void AddApplicationServices(this IServiceCollection services, IConfiguration configuration)
     {
         services.AddOpenApi();
         services.AddMemoryCache();
@@ -20,13 +22,13 @@ public static class DependencyInjection
         services.AddScoped<IProductService, ProductService>();
         services.AddScoped<ICategoryService, CategoryService>();
 
-        services.AddRepositoryDI();
+        services.AddRepositoryDI(configuration);
     }
 
-    private static void AddRepositoryDI(this IServiceCollection services)
+    private static void AddRepositoryDI(this IServiceCollection services, IConfiguration configuration)
     {
         var entityRepos = GetEntityRepositoriesFromDbContext();
-        var cachedEntities = GetCachedEntityTypesFromDbContext();
+        var cachedEntities = GetCachedEntityTypesFromDbContext(configuration);
 
         foreach (var (interfaceType, concreteType) in entityRepos)
         {
@@ -89,9 +91,11 @@ public static class DependencyInjection
         return interfaceType;
     }
 
-    private static Dictionary<Type, int> GetCachedEntityTypesFromDbContext()
+    private static Dictionary<Type, int> GetCachedEntityTypesFromDbContext(IConfiguration configuration)
     {
         var result = new Dictionary<Type, int>();
+        var settings = configuration.GetSection(CachedEntitySettings.SectionName).Get<CachedEntitySettings>();
+
         foreach (var prop in typeof(AppDbContext).GetProperties(BindingFlags.Public | BindingFlags.Instance))
         {
             if (prop.PropertyType.IsGenericType && prop.PropertyType.GetGenericTypeDefinition() == typeof(DbSet<>))
@@ -100,11 +104,36 @@ public static class DependencyInjection
                 if (cached is not null)
                 {
                     var entityType = prop.PropertyType.GenericTypeArguments[0];
-                    result[entityType] = cached.DurationMinutes;
+                    var duration = ResolveDuration(entityType, cached.DurationMinutes, settings);
+                    result[entityType] = duration;
                 }
             }
         }
         return result;
+    }
+
+    /// <summary>
+    /// Resolves cache duration with priority: 1) entity override > 2) DefaultDuration > 3) attribute > 4) default 5.
+    /// </summary>
+    private static int ResolveDuration(Type entityType, int attributeDuration, CachedEntitySettings? settings)
+    {
+        var entityName = entityType.Name;
+
+        // Priority 1: Override by entityType
+        if (settings?.Override is { Count: > 0 })
+        {
+            var match = settings.Override.FirstOrDefault(o => o.EntityName == entityName);
+            if (match?.Duration is { } d)
+                return d;
+        }
+
+        // Priority 2: DefaultDuration
+        if (settings?.DefaultDuration is { } defaultDuration)
+            return defaultDuration;
+
+        // Priority 3: [CachedEntity(duration)] on DbSet
+        // Priority 4: CachedEntityAttribute default (5) - already in attributeDuration
+        return attributeDuration;
     }
 
     private static Type? GetCachedDecoratorType(Type entityType)
