@@ -4,14 +4,9 @@ using CachedRepository.Repositories;
 
 namespace CachedRepository.Services;
 
-public class ProductService : IProductService
+public class ProductService(IProductRepository repository) : IProductService
 {
-    private readonly IProductRepository _repository;
-
-    public ProductService(IProductRepository repository)
-    {
-        _repository = repository;
-    }
+    private readonly IProductRepository _repository = repository;
 
     public Task<Product?> GetByIdAsync(int id, CancellationToken cancellationToken = default) =>
         _repository.GetByIdAsync(id, cancellationToken);

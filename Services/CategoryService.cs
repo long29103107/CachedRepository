@@ -4,14 +4,9 @@ using CachedRepository.Repositories;
 
 namespace CachedRepository.Services;
 
-public class CategoryService : ICategoryService
+public class CategoryService(ICategoryRepository repository) : ICategoryService
 {
-    private readonly ICategoryRepository _repository;
-
-    public CategoryService(ICategoryRepository repository)
-    {
-        _repository = repository;
-    }
+    private readonly ICategoryRepository _repository = repository;
 
     public Task<Category?> GetByIdAsync(int id, CancellationToken cancellationToken = default) =>
         _repository.GetByIdAsync(id, cancellationToken);

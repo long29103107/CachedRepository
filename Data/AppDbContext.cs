@@ -1,3 +1,4 @@
+using CachedRepository.Attributes;
 using Microsoft.EntityFrameworkCore;
 using CachedRepository.Entities;
 
@@ -10,8 +11,9 @@ public class AppDbContext : DbContext
     {
     }
 
-    [Cached]
     public DbSet<Product> Products => Set<Product>();
+
+    [Cached(10)]
     public DbSet<Category> Categories => Set<Category>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)

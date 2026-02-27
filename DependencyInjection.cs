@@ -1,23 +1,34 @@
 using Microsoft.EntityFrameworkCore;
 using Scalar.AspNetCore;
+using Scrutor;
 using CachedRepository.Data;
 using CachedRepository.Entities;
 using CachedRepository.Repositories;
+using CachedRepository.Repositories.Cache;
 using CachedRepository.Services;
 
 namespace CachedRepository;
 
 public static class DependencyInjection
 {
-    public static IServiceCollection AddApplicationServices(this IServiceCollection services)
+    public static void AddApplicationServices(this IServiceCollection services)
     {
         services.AddOpenApi();
+        services.AddMemoryCache();
         services.AddDbContext<AppDbContext>(options => options.UseInMemoryDatabase("CachedRepositoryDb"));
-        services.AddScoped<IProductRepository, ProductRepository>();
+
+        //Services
         services.AddScoped<IProductService, ProductService>();
-        services.AddScoped<ICategoryRepository, CategoryRepository>();
         services.AddScoped<ICategoryService, CategoryService>();
-        return services;
+
+        //Repositories
+        services.AddScoped(typeof(ICachedBaseRepository<>), typeof(CachedBaseRepository<>));
+
+        services.AddScoped<IProductRepository, ProductRepository>();
+        services.AddScoped<ICategoryRepository, CategoryRepository>();
+
+        //DbSet in application db context has attribute Cached that must add Decorate
+        services.Decorate<ICategoryRepository, CachedCategoryRepository>();
     }
 
     public static async Task ConfigureApplicationAsync(this WebApplication app)
