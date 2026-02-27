@@ -1,9 +1,9 @@
+using System.Reflection;
+using CachedRepository.Attributes;
 using Microsoft.EntityFrameworkCore;
-using Scalar.AspNetCore;
-using Scrutor;
+using Microsoft.Extensions.Caching.Memory;
 using CachedRepository.Data;
-using CachedRepository.Entities;
-using CachedRepository.Repositories;
+using CachedRepository.Repositories.Base;
 using CachedRepository.Repositories.Cache;
 using CachedRepository.Services;
 
@@ -17,48 +17,129 @@ public static class DependencyInjection
         services.AddMemoryCache();
         services.AddDbContext<AppDbContext>(options => options.UseInMemoryDatabase("CachedRepositoryDb"));
 
-        //Services
         services.AddScoped<IProductService, ProductService>();
         services.AddScoped<ICategoryService, CategoryService>();
 
-        //Repositories
-        services.AddScoped(typeof(ICachedBaseRepository<>), typeof(CachedBaseRepository<>));
-
-        services.AddScoped<IProductRepository, ProductRepository>();
-        services.AddScoped<ICategoryRepository, CategoryRepository>();
-
-        //DbSet in application db context has attribute Cached that must add Decorate
-        services.Decorate<ICategoryRepository, CachedCategoryRepository>();
+        services.AddRepositoryDI();
     }
 
-    public static async Task ConfigureApplicationAsync(this WebApplication app)
+    private static void AddRepositoryDI(this IServiceCollection services)
     {
-        if (app.Environment.IsDevelopment())
+        var entityRepos = GetEntityRepositoriesFromDbContext();
+        var cachedEntities = GetCachedEntityTypesFromDbContext();
+
+        foreach (var (interfaceType, concreteType) in entityRepos)
         {
-            app.MapOpenApi();
-            app.MapScalarApiReference();
+            services.AddScoped(interfaceType, concreteType);
         }
-        await SeedDatabaseAsync(app);
+
+        foreach (var (entityType, duration) in cachedEntities)
+        {
+            var interfaceType = GetRepositoryInterface(entityType);
+            var decoratorType = GetCachedDecoratorType(entityType);
+            if (interfaceType is null || decoratorType is null) 
+                throw new Exception($"Repository or decorator not found for entity type: {entityType}");
+
+            DecorateWithCached(services, interfaceType, decoratorType, duration);
+        }
     }
 
-    private static async Task SeedDatabaseAsync(WebApplication app)
+    private static Dictionary<Type, Type> GetEntityRepositoriesFromDbContext()
     {
-        using var scope = app.Services.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        await db.Database.EnsureCreatedAsync();
-        if (!db.Products.Any())
+        var result = new Dictionary<Type, Type>();
+        foreach (var entityType in GetDbContextEntityTypes())
         {
-            db.Products.AddRange(
-                new Product { Id = 1, Name = "Widget", Price = 9.99m, Description = "A small widget" },
-                new Product { Id = 2, Name = "Gadget", Price = 19.99m, Description = "A useful gadget" });
-            await db.SaveChangesAsync();
+            var (interfaceType, concreteType) = FindRepositoryTypes(entityType);
+            if (interfaceType is not null && concreteType is not null)
+                result[interfaceType] = concreteType;
         }
-        if (!db.Categories.Any())
+        return result;
+    }
+
+    private static List<Type> GetDbContextEntityTypes()
+    {
+        return typeof(AppDbContext)
+            .GetProperties(BindingFlags.Public | BindingFlags.Instance)
+            .Where(p => p.PropertyType.IsGenericType && p.PropertyType.GetGenericTypeDefinition() == typeof(DbSet<>))
+            .Select(p => p.PropertyType.GenericTypeArguments[0])
+            .ToList();
+    }
+
+    private static (Type? Interface, Type? Concrete) FindRepositoryTypes(Type entityType)
+    {
+        var baseRepo = typeof(IBaseRepository<>).MakeGenericType(entityType);
+        var assembly = Assembly.GetExecutingAssembly();
+
+        var interfaceType = assembly.GetTypes()
+            .Where(t => t.IsInterface && t != baseRepo)
+            .FirstOrDefault(t => baseRepo.IsAssignableFrom(t));
+        if (interfaceType is null) return (null, null);
+
+        var concreteType = assembly.GetTypes()
+            .Where(t => t.IsClass && !t.IsAbstract)
+            .Where(t => interfaceType.IsAssignableFrom(t))
+            .FirstOrDefault(t => t.BaseType?.IsGenericType != true || t.BaseType?.GetGenericTypeDefinition() != typeof(CachedBaseRepository<>));
+
+        return (interfaceType, concreteType);
+    }
+
+    private static Type? GetRepositoryInterface(Type entityType)
+    {
+        var (interfaceType, _) = FindRepositoryTypes(entityType);
+        return interfaceType;
+    }
+
+    private static Dictionary<Type, int> GetCachedEntityTypesFromDbContext()
+    {
+        var result = new Dictionary<Type, int>();
+        foreach (var prop in typeof(AppDbContext).GetProperties(BindingFlags.Public | BindingFlags.Instance))
         {
-            db.Categories.AddRange(
-                new Category { Id = 1, Name = "Electronics", Description = "Electronic devices" },
-                new Category { Id = 2, Name = "Clothing", Description = "Apparel and accessories" });
-            await db.SaveChangesAsync();
+            if (prop.PropertyType.IsGenericType && prop.PropertyType.GetGenericTypeDefinition() == typeof(DbSet<>))
+            {
+                var cached = prop.GetCustomAttribute<CachedEntityAttribute>();
+                if (cached is not null)
+                {
+                    var entityType = prop.PropertyType.GenericTypeArguments[0];
+                    result[entityType] = cached.DurationMinutes;
+                }
+            }
         }
+        return result;
+    }
+
+    private static Type? GetCachedDecoratorType(Type entityType)
+    {
+        var cachedBase = typeof(CachedBaseRepository<>).MakeGenericType(entityType);
+        var derived = Assembly.GetExecutingAssembly()
+            .GetTypes()
+            .Where(t => t.IsClass && !t.IsAbstract)
+            .FirstOrDefault(t => cachedBase.IsAssignableFrom(t) && t != cachedBase);
+
+        return derived;
+    }
+
+    private static void DecorateWithCached(IServiceCollection services, Type interfaceType, Type decoratorType, int duration)
+    {
+        typeof(DependencyInjection)
+            .GetMethod(nameof(DecorateWithCachedCore), BindingFlags.Static | BindingFlags.NonPublic)!
+            .MakeGenericMethod(interfaceType, decoratorType)
+            .Invoke(null, [services, duration]);
+    }
+
+    private static void DecorateWithCachedCore<TInterface, TDecorator>(IServiceCollection services, int duration)
+        where TDecorator : class, TInterface
+    {
+        services.Decorate<TInterface>((inner, sp) =>
+        {
+            var cache = sp.GetRequiredService<IMemoryCache>();
+            var loggerType = typeof(ILogger<>).MakeGenericType(typeof(TDecorator));
+            var logger = sp.GetService(loggerType);
+
+            object? instance = logger is not null
+                ? Activator.CreateInstance(typeof(TDecorator), inner, cache, logger, duration)
+                : Activator.CreateInstance(typeof(TDecorator), inner, cache, duration);
+
+            return (TDecorator)instance!;
+        });
     }
 }

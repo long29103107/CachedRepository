@@ -34,12 +34,7 @@ public class CachedBaseRepository<T>(
 
     public async Task<IReadOnlyList<T>> GetAllAsync(CancellationToken cancellationToken = default)
     {
-        var key = AllKey;
-        if (_cache.TryGetValue(key, out IReadOnlyList<T>? cached))
-            return cached!;
-
         var list = await _inner.GetAllAsync(cancellationToken);
-        _cache.Set(key, list, TimeSpan.FromMinutes(_duration));
         return list;
     }
 

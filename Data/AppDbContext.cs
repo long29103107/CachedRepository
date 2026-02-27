@@ -11,9 +11,10 @@ public class AppDbContext : DbContext
     {
     }
 
+    [CachedEntity(10)]
     public DbSet<Product> Products => Set<Product>();
 
-    [Cached(10)]
+    [CachedEntity(10)]
     public DbSet<Category> Categories => Set<Category>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
