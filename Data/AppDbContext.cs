@@ -10,7 +10,9 @@ public class AppDbContext : DbContext
     {
     }
 
+    [Cached]
     public DbSet<Product> Products => Set<Product>();
+    public DbSet<Category> Categories => Set<Category>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -19,6 +21,12 @@ public class AppDbContext : DbContext
             e.HasKey(p => p.Id);
             e.Property(p => p.Name).HasMaxLength(200);
             e.Property(p => p.Price).HasPrecision(18, 2);
+        });
+
+        modelBuilder.Entity<Category>(e =>
+        {
+            e.HasKey(c => c.Id);
+            e.Property(c => c.Name).HasMaxLength(200);
         });
 
         // Audit columns configured via BaseEntity properties

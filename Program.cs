@@ -7,4 +7,5 @@ builder.Services.AddApplicationServices();
 var app = builder.Build();
 await app.ConfigureApplicationAsync();
 app.MapProductEndpoints();
+app.MapCategoryEndpoints();
 app.Run();

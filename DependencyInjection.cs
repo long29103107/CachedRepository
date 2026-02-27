@@ -15,6 +15,8 @@ public static class DependencyInjection
         services.AddDbContext<AppDbContext>(options => options.UseInMemoryDatabase("CachedRepositoryDb"));
         services.AddScoped<IProductRepository, ProductRepository>();
         services.AddScoped<IProductService, ProductService>();
+        services.AddScoped<ICategoryRepository, CategoryRepository>();
+        services.AddScoped<ICategoryService, CategoryService>();
         return services;
     }
 
@@ -38,6 +40,13 @@ public static class DependencyInjection
             db.Products.AddRange(
                 new Product { Id = 1, Name = "Widget", Price = 9.99m, Description = "A small widget" },
                 new Product { Id = 2, Name = "Gadget", Price = 19.99m, Description = "A useful gadget" });
+            await db.SaveChangesAsync();
+        }
+        if (!db.Categories.Any())
+        {
+            db.Categories.AddRange(
+                new Category { Id = 1, Name = "Electronics", Description = "Electronic devices" },
+                new Category { Id = 2, Name = "Clothing", Description = "Apparel and accessories" });
             await db.SaveChangesAsync();
         }
     }
