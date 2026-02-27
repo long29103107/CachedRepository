@@ -1,8 +1,8 @@
-using Microsoft.EntityFrameworkCore;
 using CachedRepository.Data;
 using CachedRepository.Entities;
+using Microsoft.EntityFrameworkCore;
 
-namespace CachedRepository.Repositories;
+namespace CachedRepository.Repositories.Base;
 
 public class BaseRepository<T> : IBaseRepository<T> where T : BaseEntity
 {
