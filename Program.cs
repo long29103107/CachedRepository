@@ -10,5 +10,6 @@ await app.ConfigureApplicationAsync();
 
 app.MapProductEndpoints();
 app.MapCategoryEndpoints();
+app.MapTransactionSampleEndpoints();
 
 app.Run();

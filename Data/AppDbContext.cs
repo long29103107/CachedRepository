@@ -1,11 +1,20 @@
+using System.Data;
 using CachedRepository.Attributes;
 using Microsoft.EntityFrameworkCore;
 using CachedRepository.Entities;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 
 namespace CachedRepository.Data;
 
 public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(options)
 {
+    public IDbConnection Connection =>
+        Database.GetDbConnection();
+
+    public IDbTransaction? CurrentTransaction =>
+        Database.CurrentTransaction?.GetDbTransaction();
+    
     [CachedEntity]
     public DbSet<Product> Products => Set<Product>();
 

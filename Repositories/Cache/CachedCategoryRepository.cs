@@ -1,13 +1,13 @@
+using CachedRepository.Cache;
 using CachedRepository.Entities;
-using Microsoft.Extensions.Caching.Memory;
 
 namespace CachedRepository.Repositories.Cache;
 
 public class CachedCategoryRepository(
     ICategoryRepository inner,
-    IMemoryCache cache,
+    ICacheService cacheService,
     ILogger<CachedCategoryRepository> logger,
-    int durationMinutes = 5) : CachedBaseRepository<Category>(inner, cache, durationMinutes), ICategoryRepository
+    int durationMinutes = 5) : CachedBaseRepository<Category>(inner, cacheService, durationMinutes), ICategoryRepository
 {
     private readonly ILogger<CachedCategoryRepository> _logger = logger;
     public async Task<Category?> GetByIdAsync(int id, CancellationToken cancellationToken = default)

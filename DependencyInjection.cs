@@ -4,6 +4,7 @@ using CachedRepository.Configuration;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
+using CachedRepository.Cache;
 using CachedRepository.Data;
 using CachedRepository.Repositories.Base;
 using CachedRepository.Repositories.Cache;
@@ -21,8 +22,10 @@ public static class DependencyInjection
 
         services.AddScoped<IProductService, ProductService>();
         services.AddScoped<ICategoryService, CategoryService>();
+        services.AddScoped<ICacheService, CacheService>();
 
         services.AddRepositoryDI(configuration);
+        services.AddScoped<IUnitOfWork, EfUnitOfWork>();
     }
 
     private static void AddRepositoryDI(this IServiceCollection services, IConfiguration configuration)
@@ -160,13 +163,13 @@ public static class DependencyInjection
     {
         services.Decorate<TInterface>((inner, sp) =>
         {
-            var cache = sp.GetRequiredService<IMemoryCache>();
+            var cacheService = sp.GetRequiredService<ICacheService>();
             var loggerType = typeof(ILogger<>).MakeGenericType(typeof(TDecorator));
             var logger = sp.GetService(loggerType);
 
             object? instance = logger is not null
-                ? Activator.CreateInstance(typeof(TDecorator), inner, cache, logger, duration)
-                : Activator.CreateInstance(typeof(TDecorator), inner, cache, duration);
+                ? Activator.CreateInstance(typeof(TDecorator), inner, cacheService, logger, duration)
+                : Activator.CreateInstance(typeof(TDecorator), inner, cacheService, duration);
 
             return (TDecorator)instance!;
         });
